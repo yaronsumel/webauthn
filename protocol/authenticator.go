@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
+	"github.com/duo-labs/webauthn/protocol/webauthncbor"
 )
 
 var minAuthDataLength = 37
@@ -47,7 +47,7 @@ type AttestedCredentialData struct {
 	CredentialPublicKey []byte `json:"public_key"`
 }
 
-// AuthenticatorAttachment https://www.w3.org/TR/webauthn/#platform-attachment
+// AuthenticatorAttachment https://www.w3.org/TR/webauthn/#dom-authenticatorselectioncriteria-authenticatorattachment
 type AuthenticatorAttachment string
 
 const (
@@ -60,6 +60,21 @@ const (
 	// among, client devices. A public key credential bound to a roaming authenticator is called a
 	// roaming credential.
 	CrossPlatform AuthenticatorAttachment = "cross-platform"
+)
+
+// ResidentKeyRequirement https://www.w3.org/TR/webauthn/#dom-authenticatorselectioncriteria-residentkey
+type ResidentKeyRequirement string
+
+const (
+	// ResidentKeyRequirementDiscouraged indicates to the client we do not want a discoverable credential. This is the default.
+	ResidentKeyRequirementDiscouraged ResidentKeyRequirement = "discouraged"
+
+	// ResidentKeyRequirementPreferred indicates to the client we would prefer a discoverable credential.
+	ResidentKeyRequirementPreferred ResidentKeyRequirement = "preferred"
+
+	// ResidentKeyRequirementRequired indicates to the client we require a discoverable credential and that it should
+	// fail if the credential does not support this feature.
+	ResidentKeyRequirementRequired ResidentKeyRequirement = "required"
 )
 
 // Authenticators may implement various transports for communicating with clients. This enumeration defines
@@ -199,8 +214,8 @@ func (a *AuthenticatorData) unmarshalAttestedData(rawAuthData []byte) {
 // Unmarshall the credential's Public Key into CBOR encoding
 func unmarshalCredentialPublicKey(keyBytes []byte) []byte {
 	var m interface{}
-	cbor.Unmarshal(keyBytes, &m)
-	rawBytes, _ := cbor.Marshal(m)
+	webauthncbor.Unmarshal(keyBytes, &m)
+	rawBytes, _ := webauthncbor.Marshal(m)
 	return rawBytes
 }
 
@@ -218,13 +233,13 @@ func ResidentKeyUnrequired() *bool {
 
 // Verify on AuthenticatorData handles Steps 9 through 12 for Registration
 // and Steps 11 through 14 for Assertion.
-func (a *AuthenticatorData) Verify(rpIdHash []byte, userVerificationRequired bool) error {
+func (a *AuthenticatorData) Verify(rpIdHash, appIDHash []byte, userVerificationRequired bool) error {
 
 	// Registration Step 9 & Assertion Step 11
 	// Verify that the RP ID hash in authData is indeed the SHA-256
 	// hash of the RP ID expected by the RP.
-	if !bytes.Equal(a.RPIDHash[:], rpIdHash) {
-		return ErrVerification.WithInfo(fmt.Sprintf("RP Hash mismatch. Expected %+s and Received %+s\n", a.RPIDHash, rpIdHash))
+	if !bytes.Equal(a.RPIDHash[:], rpIdHash) && !bytes.Equal(a.RPIDHash[:], appIDHash) {
+		return ErrVerification.WithInfo(fmt.Sprintf("RP Hash mismatch. Expected %x and Received %x\n", a.RPIDHash, rpIdHash))
 	}
 
 	// Registration Step 10 & Assertion Step 12

@@ -41,18 +41,12 @@ func (webauthn *WebAuthn) BeginRegistration(user User, opts ...RegistrationOptio
 
 	credentialParams := defaultRegistrationCredentialParameters()
 
-	rrk := false
-	authSelection := protocol.AuthenticatorSelection{
-		RequireResidentKey: &rrk,
-		UserVerification:   protocol.VerificationPreferred,
-	}
-
 	creationOptions := protocol.PublicKeyCredentialCreationOptions{
 		Challenge:              challenge,
 		RelyingParty:           relyingParty,
 		User:                   webAuthnUser,
 		Parameters:             credentialParams,
-		AuthenticatorSelection: authSelection,
+		AuthenticatorSelection: webauthn.Config.AuthenticatorSelection,
 		Timeout:                webauthn.Config.Timeout,
 		Attestation:            webauthn.Config.AttestationPreference,
 	}
@@ -63,8 +57,9 @@ func (webauthn *WebAuthn) BeginRegistration(user User, opts ...RegistrationOptio
 
 	response := protocol.CredentialCreation{Response: creationOptions}
 	newSessionData := SessionData{
-		Challenge: base64.RawURLEncoding.EncodeToString(challenge),
-		UserID:    user.WebAuthnID(),
+		Challenge:        base64.RawURLEncoding.EncodeToString(challenge),
+		UserID:           user.WebAuthnID(),
+		UserVerification: creationOptions.AuthenticatorSelection.UserVerification,
 	}
 
 	if err != nil {
@@ -102,6 +97,20 @@ func WithExtensions(extension protocol.AuthenticationExtensions) RegistrationOpt
 	}
 }
 
+// WithResidentKeyRequirement sets both the resident key and require resident key protocol options. This could conflict
+// with webauthn.WithAuthenticatorSelection if it doesn't come after it.
+func WithResidentKeyRequirement(requirement protocol.ResidentKeyRequirement) RegistrationOption {
+	return func(cco *protocol.PublicKeyCredentialCreationOptions) {
+		cco.AuthenticatorSelection.ResidentKey = requirement
+		switch requirement {
+		case protocol.ResidentKeyRequirementRequired:
+			cco.AuthenticatorSelection.RequireResidentKey = protocol.ResidentKeyRequired()
+		default:
+			cco.AuthenticatorSelection.RequireResidentKey = protocol.ResidentKeyUnrequired()
+		}
+	}
+}
+
 // Take the response from the authenticator and client and verify the credential against the user's credentials and
 // session data.
 func (webauthn *WebAuthn) FinishRegistration(user User, session SessionData, response *http.Request) (*Credential, error) {
@@ -119,7 +128,7 @@ func (webauthn *WebAuthn) CreateCredential(user User, session SessionData, parse
 		return nil, protocol.ErrBadRequest.WithDetails("ID mismatch for User and Session")
 	}
 
-	shouldVerifyUser := webauthn.Config.AuthenticatorSelection.UserVerification == protocol.VerificationRequired
+	shouldVerifyUser := session.UserVerification == protocol.VerificationRequired
 
 	invalidErr := parsedResponse.Verify(session.Challenge, shouldVerifyUser, webauthn.Config.RPID, webauthn.Config.RPOrigin)
 	if invalidErr != nil {
@@ -131,43 +140,43 @@ func (webauthn *WebAuthn) CreateCredential(user User, session SessionData, parse
 
 func defaultRegistrationCredentialParameters() []protocol.CredentialParameter {
 	return []protocol.CredentialParameter{
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgES256,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgES384,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgES512,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgRS256,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgRS384,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgRS512,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgPS256,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgPS384,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgPS512,
 		},
-		protocol.CredentialParameter{
+		{
 			Type:      protocol.PublicKeyCredentialType,
 			Algorithm: webauthncose.AlgEdDSA,
 		},

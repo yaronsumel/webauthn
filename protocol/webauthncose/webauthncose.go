@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/crypto/ed25519"
 
-	"github.com/fxamacker/cbor/v2"
+	"github.com/duo-labs/webauthn/protocol/webauthncbor"
 )
 
 // PublicKeyData The public key portion of a Relying Party-specific credential key pair, generated
@@ -160,26 +160,39 @@ func HasherFromCOSEAlg(coseAlg COSEAlgorithmIdentifier) func() hash.Hash {
 // Figure out what kind of COSE material was provided and create the data for the new key
 func ParsePublicKey(keyBytes []byte) (interface{}, error) {
 	pk := PublicKeyData{}
-	cbor.Unmarshal(keyBytes, &pk)
+	webauthncbor.Unmarshal(keyBytes, &pk)
 	switch COSEKeyType(pk.KeyType) {
 	case OctetKey:
 		var o OKPPublicKeyData
-		cbor.Unmarshal(keyBytes, &o)
+		webauthncbor.Unmarshal(keyBytes, &o)
 		o.PublicKeyData = pk
 		return o, nil
 	case EllipticKey:
 		var e EC2PublicKeyData
-		cbor.Unmarshal(keyBytes, &e)
+		webauthncbor.Unmarshal(keyBytes, &e)
 		e.PublicKeyData = pk
 		return e, nil
 	case RSAKey:
 		var r RSAPublicKeyData
-		cbor.Unmarshal(keyBytes, &r)
+		webauthncbor.Unmarshal(keyBytes, &r)
 		r.PublicKeyData = pk
 		return r, nil
 	default:
 		return nil, ErrUnsupportedKey
 	}
+}
+
+// ParseFIDOPublicKey is only used when the appID extension is configured by the assertion response.
+func ParseFIDOPublicKey(keyBytes []byte) (EC2PublicKeyData, error) {
+	x, y := elliptic.Unmarshal(elliptic.P256(), keyBytes)
+
+	return EC2PublicKeyData{
+		PublicKeyData: PublicKeyData{
+			Algorithm: int64(AlgES256),
+		},
+		XCoord: x.Bytes(),
+		YCoord: y.Bytes(),
+	}, nil
 }
 
 // COSEAlgorithmIdentifier From §5.10.5. A number identifying a cryptographic algorithm. The algorithm
@@ -372,7 +385,7 @@ var (
 		Details: "Unsupported public key algorithm",
 	}
 	ErrSigNotProvidedOrInvalid = &Error{
-		Type: "signature_not_provided_or_invalid",
+		Type:    "signature_not_provided_or_invalid",
 		Details: "Signature invalid or not provided",
 	}
 )
